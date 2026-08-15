@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Chess — The Speaking Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<style>
+  :root{
+    --walnut-dark:#1d140e;
+    --walnut:#2b1d14;
+    --walnut-light:#3d2a1c;
+    --parchment:#ebdfc4;
+    --parchment-dim:#d8c9a3;
+    --brass:#c9a227;
+    --brass-bright:#e8c25f;
+    --burgundy:#8a2f2f;
+    --burgundy-bright:#c04b4b;
+    --ink:#2b1d14;
+    --felt-shadow: rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at 20% -10%, #3a2818 0%, transparent 55%),
+      radial-gradient(ellipse at 100% 110%, #150d08 0%, transparent 60%),
+      linear-gradient(160deg,#1a1109 0%, #241609 45%, #170f08 100%);
+    color:var(--parchment);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding:32px 20px 60px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+
+  /* ---------- Header ---------- */
+  .masthead{
+    text-align:center;
+    margin-bottom:28px;
+    max-width:720px;
+  }
+  .masthead .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    letter-spacing:.35em;
+    text-transform:uppercase;
+    font-size:11px;
+    color:var(--brass);
+    opacity:.85;
+  }
+  .masthead h1{
+    font-family:'Cormorant Garamond',serif;
+    font-weight:700;
+    font-size:clamp(38px,6vw,58px);
+    margin:6px 0 4px;
+    letter-spacing:.01em;
+    background:linear-gradient(180deg,var(--brass-bright),var(--brass) 70%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+  }
+  .masthead p{
+    font-family:'Cormorant Garamond',serif;
+    font-style:italic;
+    font-size:18px;
+    color:var(--parchment-dim);
+    margin:0;
+  }
+
+  /* ---------- Layout ---------- */
+  .table{
+    display:grid;
+    grid-template-columns:auto 320px;
+    gap:36px;
+    align-items:start;
+  }
+  @media (max-width:880px){
+    .table{grid-template-columns:1fr; justify-items:center;}
+  }
+
+  /* ---------- Board ---------- */
+  .board-frame{
+    background:linear-gradient(155deg,#4a3220,#2a1a0d 60%);
+    padding:18px;
+    border-radius:6px;
+    box-shadow:0 30px 60px -20px var(--felt-shadow), inset 0 0 0 1px rgba(201,162,39,.25), inset 0 2px 8px rgba(0,0,0,.5);
+    position:relative;
+  }
+  .board-frame::before{
+    content:"";
+    position:absolute; inset:8px;
+    border:1px solid rgba(201,162,39,.35);
+    border-radius:3px;
+    pointer-events:none;
+  }
+  .board{
+    display:grid;
+    grid-template-columns:repeat(8,min(11vw,58px));
+    grid-template-rows:repeat(8,min(11vw,58px));
+    box-shadow:0 0 0 3px var(--walnut-dark);
+  }
+  .sq{
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    font-size:min(8vw,42px);
+    cursor:pointer;
+    user-select:none;
+    transition:filter .12s ease;
+  }
+  .sq.light{ background:var(--parchment); }
+  .sq.dark{ background:#7a5230; }
+  .sq .piece{
+    filter:drop-shadow(0 2px 1px rgba(0,0,0,.45));
+    transition:transform .12s ease;
+    line-height:1;
+  }
+  .sq.white-piece .piece{ color:#faf6ec; -webkit-text-stroke:1px #40260f; }
+  .sq.black-piece .piece{ color:#1a1108; -webkit-text-stroke:1px #6b4a24; }
+  .sq:hover .piece{ transform:scale(1.08); }
+  .sq.selected{ box-shadow:inset 0 0 0 3px var(--brass-bright); }
+  .sq.last-move{ box-shadow:inset 0 0 0 3px rgba(201,162,39,.55); }
+  .sq.legal::after{
+    content:"";
+    position:absolute; width:26%; height:26%; border-radius:50%;
+    background:rgba(138,47,47,.55);
+  }
+  .sq.legal.has-piece::after{
+    width:100%; height:100%; border-radius:0; background:transparent;
+    box-shadow:inset 0 0 0 4px rgba(138,47,47,.65);
+  }
+  .sq.in-check{ box-shadow:inset 0 0 0 4px var(--burgundy-bright); }
+  .coord{
+    position:absolute; font-family:'IBM Plex Mono',monospace; font-size:9px; opacity:.55; pointer-events:none;
+  }
+  .coord.file{ bottom:2px; right:3px; }
+  .coord.rank{ top:2px; left:3px; }
+  .sq.light .coord{ color:var(--walnut); }
+  .sq.dark .coord{ color:var(--parchment-dim); }
+
+  .board-controls{
+    display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap;
+  }
+  .btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    padding:9px 16px;
+    border-radius:3px;
+    border:1px solid rgba(201,162,39,.4);
+    background:rgba(201,162,39,.08);
+    color:var(--brass-bright);
+    cursor:pointer;
+    transition:background .15s ease, transform .1s ease;
+  }
+  .btn:hover{ background:rgba(201,162,39,.2); }
+  .btn:active{ transform:translateY(1px); }
+  .btn.primary{ background:var(--burgundy); border-color:var(--burgundy-bright); color:var(--parchment); }
+  .btn.primary:hover{ background:var(--burgundy-bright); }
+
+  /* ---------- Side panel ---------- */
+  .panel{
+    width:320px;
+    max-width:88vw;
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+  }
+  .card{
+    background:linear-gradient(160deg,rgba(61,42,28,.7),rgba(29,20,14,.85));
+    border:1px solid rgba(201,162,39,.22);
+    border-radius:6px;
+    padding:16px 18px;
+    box-shadow:0 12px 30px -14px rgba(0,0,0,.6);
+  }
+  .card h2{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.28em;
+    text-transform:uppercase;
+    color:var(--brass);
+    margin:0 0 10px;
+    opacity:.9;
+  }
+
+  /* mic */
+  .mic-wrap{ display:flex; align-items:center; gap:14px; }
+  .mic-btn{
+    position:relative;
+    width:64px; height:64px;
+    border-radius:50%;
+    border:2px solid var(--brass);
+    background:radial-gradient(circle at 35% 30%, #d9b13f, #8a6c15 70%);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+    box-shadow:0 6px 16px -4px rgba(0,0,0,.6);
+  }
+  .mic-btn svg{ width:26px; height:26px; fill:#1d140e; }
+  .mic-btn.listening{
+    background:radial-gradient(circle at 35% 30%, var(--burgundy-bright), var(--burgundy) 70%);
+    border-color:var(--burgundy-bright);
+  }
+  .mic-btn .ring{
+    position:absolute; inset:-8px;
+    border-radius:50%;
+    border:2px solid var(--burgundy-bright);
+    opacity:0;
+  }
+  .mic-btn.listening .ring{
+    animation:pulse-ring 1.6s cubic-bezier(.3,.6,.4,1) infinite;
+  }
+  @keyframes pulse-ring{
+    0%{ transform:scale(.85); opacity:.7; }
+    100%{ transform:scale(1.55); opacity:0; }
+  }
+  .mic-status{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    line-height:1.5;
+  }
+  .mic-status .state{ color:var(--brass-bright); text-transform:uppercase; letter-spacing:.08em; font-size:11px; }
+  .mic-status .hint{ color:var(--parchment-dim); opacity:.75; font-size:11px; }
+
+  .transcript{
+    margin-top:12px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    min-height:20px;
+    color:var(--parchment);
+    border-top:1px dashed rgba(201,162,39,.25);
+    padding-top:10px;
+  }
+  .transcript .heard{ opacity:.65; }
+  .transcript .result{ margin-top:4px; }
+  .result.ok{ color:#9fd68c; }
+  .result.err{ color:var(--burgundy-bright); }
+  .result.info{ color:var(--brass-bright); }
+
+  /* status */
+  .status-line{ font-family:'Cormorant Garamond',serif; font-size:22px; font-weight:600; color:var(--parchment); }
+  .status-sub{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--parchment-dim); margin-top:4px; opacity:.8;}
+
+  /* scoresheet */
+  .scoresheet{
+    max-height:260px;
+    overflow-y:auto;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+  }
+  .scoresheet table{ width:100%; border-collapse:collapse; }
+  .scoresheet td{ padding:3px 4px; border-bottom:1px solid rgba(201,162,39,.12); }
+  .scoresheet td.num{ color:var(--brass); width:28px; opacity:.7; }
+  .scoresheet::-webkit-scrollbar{ width:6px; }
+  .scoresheet::-webkit-scrollbar-thumb{ background:rgba(201,162,39,.4); border-radius:3px; }
+
+  .commands-list{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    line-height:1.9;
+    color:var(--parchment-dim);
+  }
+  .commands-list b{ color:var(--brass-bright); font-weight:600; }
+
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+  .toggle-row span{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--parchment-dim); text-transform:uppercase; letter-spacing:.06em; }
+  .switch{ position:relative; width:38px; height:20px; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{ position:absolute; inset:0; background:rgba(201,162,39,.25); border-radius:20px; cursor:pointer; transition:.2s; }
+  .slider::before{ content:""; position:absolute; width:14px; height:14px; left:3px; top:3px; background:var(--parchment); border-radius:50%; transition:.2s; }
+  input:checked + .slider{ background:var(--burgundy); }
+  input:checked + .slider::before{ transform:translateX(18px); }
+
+  .unsupported{
+    background:rgba(138,47,47,.2);
+    border:1px solid var(--burgundy-bright);
+    padding:10px 12px;
+    border-radius:4px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    color:#f0c9c9;
+    margin-top:10px;
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="eyebrow">A game spoken, not clicked</div>
+  <h1>Voice Chess</h1>
+  <p>Call your move across the board — the pieces will listen.</p>
+</div>
+
+<div class="table">
+  <div>
+    <div class="board-frame">
+      <div class="board" id="board"></div>
+    </div>
+    <div class="board-controls">
+      <button class="btn primary" id="newGameBtn">New Game</button>
+      <button class="btn" id="undoBtn">Undo</button>
+      <button class="btn" id="flipBtn">Flip Board</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h2>Status</h2>
+      <div class="status-line" id="statusLine">White to move</div>
+      <div class="status-sub" id="statusSub">Move 1</div>
+    </div>
+
+    <div class="card">
+      <h2>Voice Control</h2>
+      <div class="mic-wrap">
+        <button class="mic-btn" id="micBtn">
+          <div class="ring"></div>
+          <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+        </button>
+        <div class="mic-status">
+          <div class="state" id="micState">Tap to speak</div>
+          <div class="hint" id="micHint">e.g. "e2 to e4" or "knight f3"</div>
+        </div>
+      </div>
+      <div id="unsupportedNote"></div>
+      <div class="transcript">
+        <div class="heard" id="heardText">Listening feed will appear here…</div>
+        <div class="result" id="resultText"></div>
+      </div>
+      <div class="toggle-row">
+        <span>Speak confirmations</span>
+        <label class="switch">
+          <input type="checkbox" id="speakToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scoresheet</h2>
+      <div class="scoresheet"><table id="moveTable"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>Say things like</h2>
+      <div class="commands-list">
+        <div><b>e2 to e4</b> — square to square</div>
+        <div><b>knight f3</b> — piece to square</div>
+        <div><b>queen takes e5</b> — captures</div>
+        <div><b>castle kingside</b> / <b>queenside</b></div>
+        <div><b>e8 promote queen</b> — promotion</div>
+        <div><b>undo</b> · <b>new game</b> · <b>flip board</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const game = new Chess();
+const boardEl = document.getElementById('board');
+const statusLine = document.getElementById('statusLine');
+const statusSub = document.getElementById('statusSub');
+const moveTable = document.getElementById('moveTable');
+const heardText = document.getElementById('heardText');
+const resultText = document.getElementById('resultText');
+const micBtn = document.getElementById('micBtn');
+const micState = document.getElementById('micState');
+const micHint = document.getElementById('micHint');
+const speakToggle = document.getElementById('speakToggle');
+const unsupportedNote = document.getElementById('unsupportedNote');
+
+let flipped = false;
+let selectedSquare = null;
+let lastMove = null;
+
+const PIECE_UNICODE = {
+  p:'♟', n:'♞', b:'♝', r:'♜', q:'♛', k:'♚',
+};
+
+// ---------------- Board rendering ----------------
+function squareName(fileIdx, rankIdx){
+  // fileIdx 0-7 => a-h, rankIdx 0-7 => 8..1 (row order as chess.js .board() returns, rank8 first)
+  const file = 'abcdefgh'[fileIdx];
+  const rank = 8 - rankIdx;
+  return file + rank;
+}
+
+function renderBoard(){
+  boardEl.innerHTML = '';
+  const boardArr = game.board(); // 8x8, [0] = rank8 ... [7] = rank1
+  const rowsOrder = flipped ? [...boardArr].reverse() : boardArr;
+
+  for(let r=0; r<8; r++){
+    let rowData = rowsOrder[r];
+    let displayRow = flipped ? [...rowData].reverse() : rowData;
+    for(let c=0; c<8; c++){
+      const trueR = flipped ? 7-r : r;
+      const trueC = flipped ? 7-c : c;
+      const sqName = squareName(trueC, trueR);
+      const cell = displayRow[c];
+
+      const sqEl = document.createElement('div');
+      const isLight = (trueR + trueC) % 2 === 0;
+      sqEl.className = 'sq ' + (isLight ? 'light' : 'dark');
+      sqEl.dataset.square = sqName;
+
+      if(cell){
+        sqEl.classList.add(cell.color === 'w' ? 'white-piece' : 'black-piece');
+        sqEl.classList.add('has-piece');
+        const pieceSpan = document.createElement('span');
+        pieceSpan.className = 'piece';
+        pieceSpan.textContent = PIECE_UNICODE[cell.type];
+        sqEl.appendChild(pieceSpan);
+      }
+
+      // coordinate labels on edges
+      if(c === 0){
+        const rankLabel = document.createElement('span');
+        rankLabel.className = 'coord rank';
+        rankLabel.textContent = sqName[1];
+        sqEl.appendChild(rankLabel);
+      }
+      if(r === 7){
+        const fileLabel = document.createElement('span');
+        fileLabel.className = 'coord file';
+        fileLabel.textContent = sqName[0];
+        sqEl.appendChild(fileLabel);
+      }
+
+      if(selectedSquare === sqName) sqEl.classList.add('selected');
+      if(lastMove && (lastMove.from === sqName || lastMove.to === sqName)) sqEl.classList.add('last-move');
+
+      sqEl.addEventListener('click', () => onSquareClick(sqName));
+      boardEl.appendChild(sqEl);
+    }
+  }
+
+  // legal move dots for selected square
+  if(selectedSquare){
+    const moves = game.moves({square: selectedSquare, verbose:true});
+    moves.forEach(m => {
+      const el = boardEl.querySelector(`[data-square="${m.to}"]`);
+      if(el) el.classList.add('legal');
+    });
+  }
+
+  // check highlight
+  if(game.in_check()){
+    const turn = game.turn();
+    const kingSq = findKingSquare(turn);
+    if(kingSq){
+      const el = boardEl.querySelector(`[data-square="${kingSq}"]`);
+      if(el) el.classList.add('in-check');
+    }
+  }
+
+  renderStatus();
+  renderScoresheet();
+}
+
+function findKingSquare(color){
+  const b = game.board();
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const cell = b[r][c];
+      if(cell && cell.type === 'k' && cell.color === color){
+        return squareName(c, r);
+      }
+    }
+  }
+  return null;
+}
+
+function onSquareClick(sqName){
+  if(!selectedSquare){
+    const piece = game.get(sqName);
+    if(piece && piece.color === game.turn()){
+      selectedSquare = sqName;
+      renderBoard();
+    }
+    return;
+  }
+  if(selectedSquare === sqName){
+    selectedSquare = null;
+    renderBoard();
+    return;
+  }
+  const piece = game.get(sqName);
+  if(piece && piece.color === game.turn()){
+    selectedSquare = sqName;
+    renderBoard();
+    return;
+  }
+  const move = attemptMove(selectedSquare, sqName);
+  selectedSquare = null;
+  if(!move){
+    renderBoard();
+  }
+}
+
+function renderStatus(){
+  let turnText = game.turn() === 'w' ? 'White to move' : 'Black to move';
+  let sub = 'Move ' + Math.ceil(game.history().length/2 + 1);
+
+  if(game.in_checkmate()){
+    turnText = (game.turn() === 'w' ? 'Black' : 'White') + ' wins by checkmate';
+    sub = 'Game over';
+  } else if(game.in_stalemate()){
+    turnText = 'Stalemate';
+    sub = 'Draw';
+  } else if(game.in_draw()){
+    turnText = 'Draw';
+    sub = 'Insufficient material / 50-move rule';
+  } else if(game.in_check()){
+    turnText += ' — check';
+  }
+  statusLine.textContent = turnText;
+  statusSub.textContent = sub;
+}
+
+function renderScoresheet(){
+  const hist = game.history();
+  let rows = '';
+  for(let i=0; i<hist.length; i+=2){
+    const num = i/2 + 1;
+    const white = hist[i] || '';
+    const black = hist[i+1] || '';
+    rows += `<tr><td class="num">${num}.</td><td>${white}</td><td>${black}</td></tr>`;
+  }
+  moveTable.innerHTML = rows;
+  const wrap = moveTable.parentElement;
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+// ---------------- Move execution ----------------
+function attemptMove(from, to, promotion){
+  const move = game.move({from, to, promotion: promotion || 'q'});
+  if(move){
+    lastMove = move;
+    renderBoard();
+    return move;
+  }
+  return null;
+}
+
+function speak(text){
+  if(!speakToggle.checked) return;
+  if(!('speechSynthesis' in window)) return;
+  try{
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.02;
+    u.pitch = 0.95;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function showResult(text, kind){
+  resultText.textContent = text;
+  resultText.className = 'result ' + kind;
+}
+
+// ---------------- Voice command parsing ----------------
+const NUM_WORDS = {one:'1',two:'2',to:'2',too:'2',three:'3',four:'4',for:'4',five:'5',six:'6',seven:'7',eight:'8',ate:'8'};
+const LETTER_WORDS = {
+  a:'a', ay:'a', hey:'a',
+  b:'b', be:'b', bee:'b',
+  c:'c', see:'c', sea:'c',
+  d:'d', dee:'d',
+  e:'e',
+  f:'f', eff:'f',
+  g:'g', gee:'g', jee:'g',
+  h:'h', aitch:'h', h8:'h',
+};
+const PIECE_WORDS = {
+  pawn:'p', knight:'n', night:'n', bishop:'b', rook:'r', rock:'r', castle:'castle',
+  queen:'q', king:'k',
+};
+const PROMO_WORDS = { queen:'q', rook:'r', bishop:'b', knight:'n', night:'n' };
+
+function extractSquares(rawLower){
+  // direct matches like "e4"
+  const direct = rawLower.match(/\b[a-h][1-8]\b/g) || [];
+
+  // word-by-word reconstruction, e.g. "e two to e four"
+  const words = rawLower.replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean);
+  const normWords = words.map(w => NUM_WORDS[w] || LETTER_WORDS[w] || w);
+  const reconstructed = [];
+  for(let i=0; i<normWords.length-1; i++){
+    if(/^[a-h]$/.test(normWords[i]) && /^[1-8]$/.test(normWords[i+1])){
+      reconstructed.push(normWords[i] + normWords[i+1]);
+    }
+  }
+  const all = [...direct, ...reconstructed];
+  // de-dup while preserving order
+  const seen = new Set();
+  const out = [];
+  for(const sq of all){
+    const key = sq + '@' + out.length;
+    if(!out.includes(sq) || true){ out.push(sq); }
+  }
+  return out;
+}
+
+function parseAndPlay(transcript){
+  const raw = transcript.toLowerCase().trim();
+  heardText.textContent = '"' + transcript + '"';
+
+  // ---- meta commands ----
+  if(/\b(undo|take back)\b/.test(raw)){
+    const m = game.undo();
+    if(m){ lastMove = game.history({verbose:true}).slice(-1)[0] || null; renderBoard(); showResult('Move undone.', 'info'); speak('Move undone'); }
+    else { showResult('Nothing to undo.', 'err'); }
+    return;
+  }
+  if(/\bnew game\b|\breset\b|\brestart\b/.test(raw)){
+    newGame();
+    showResult('New game started.', 'info');
+    speak('New game');
+    return;
+  }
+  if(/\bflip\b/.test(raw)){
+    flipped = !flipped;
+    renderBoard();
+    showResult('Board flipped.', 'info');
+    return;
+  }
+
+  // ---- castling ----
+  if(/\bcastle\b|\bcastling\b/.test(raw)){
+    const kingside = /king\s*side|short/.test(raw);
+    const queenside = /queen\s*side|long/.test(raw);
+    let san = null;
+    if(queenside) san = 'O-O-O';
+    else if(kingside) san = 'O-O';
+    else san = 'O-O'; // default to kingside if unspecified
+
+    const move = game.move(san);
+    if(move){
+      lastMove = move;
+      renderBoard();
+      showResult('Castled ' + (san === 'O-O' ? 'kingside' : 'queenside') + '.', 'ok');
+      speak(san === 'O-O' ? 'Castling kingside' : 'Castling queenside');
+    } else {
+      showResult("Can't castle right now.", 'err');
+      speak("Can't castle right now");
+    }
+    return;
+  }
+
+  // ---- promotion piece, if mentioned ----
+  let promotion = 'q';
+  const promoMatch = raw.match(/promote?s?\s+(?:to\s+)?(\w+)/);
+  if(promoMatch && PROMO_WORDS[promoMatch[1]]) promotion = PROMO_WORDS[promoMatch[1]];
+
+  // ---- square extraction ----
+  const squares = extractSquares(raw);
+
+  // ---- piece keyword extraction (excluding "castle" already handled) ----
+  let pieceKey = null;
+  for(const word of Object.keys(PIECE_WORDS)){
+    if(word === 'castle') continue;
+    const re = new RegExp('\\b' + word + '\\b');
+    if(re.test(raw)){ pieceKey = PIECE_WORDS[word]; break; }
+  }
+
+  // Case 1: two squares spoken -> from/to
+  if(squares.length >= 2){
+    const [from, to] = squares;
+    const move = attemptMove(from, to, promotion);
+    if(move){
+      showResult(`Played ${move.san}.`, 'ok');
+      speak(sanToSpeech(move.san));
+    } else {
+      showResult(`"${from} to ${to}" isn't a legal move.`, 'err');
+      speak('Illegal move');
+    }
+    return;
+  }
+
+  // Case 2: one square + optional piece keyword
+  if(squares.length === 1){
+    const to = squares[0];
+    const verboseMoves = game.moves({verbose:true});
+    let candidates;
+    if(pieceKey && pieceKey !== 'castle'){
+      candidates = verboseMoves.filter(m => m.piece === pieceKey && m.to === to);
+    } else {
+      // default: prefer pawn moves to that square, else any piece
+      candidates = verboseMoves.filter(m => m.piece === 'p' && m.to === to);
+      if(candidates.length === 0){
+        candidates = verboseMoves.filter(m => m.to === to);
+      }
+    }
+
+    if(candidates.length === 1){
+      const move = attemptMove(candidates[0].from, candidates[0].to, promotion);
+      showResult(`Played ${move.san}.`, 'ok');
+      speak(sanToSpeech(move.san));
+    } else if(candidates.length > 1){
+      const froms = candidates.map(c => c.from).join(', ');
+      showResult(`Ambiguous — more than one piece can move to ${to} (from ${froms}). Try saying the starting square too, e.g. "${candidates[0].from} to ${to}".`, 'err');
+      speak('That move is ambiguous, please specify the starting square');
+    } else {
+      showResult(`No legal move to ${to} found.`, 'err');
+      speak('No legal move found');
+    }
+    return;
+  }
+
+  showResult(`Didn't catch a move in "${transcript}". Try "e2 to e4" or "knight f3".`, 'err');
+}
+
+function sanToSpeech(san){
+  return san
+    .replace(/N/g,'knight ')
+    .replace(/B/g,'bishop ')
+    .replace(/R/g,'rook ')
+    .replace(/Q/g,'queen ')
+    .replace(/K/g,'king ')
+    .replace(/O-O-O/g,'castles queenside')
+    .replace(/O-O/g,'castles kingside')
+    .replace(/x/g,' takes ')
+    .replace(/\+/g,' check')
+    .replace(/#/g,' checkmate')
+    .replace(/=/g,' promotes to ');
+}
+
+// ---------------- Speech recognition ----------------
+let recognition = null;
+let listening = false;
+let userStopped = true;
+
+const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if(!SpeechRecognitionAPI){
+  unsupportedNote.innerHTML = '<div class="unsupported">Speech recognition isn\'t supported in this browser. Try Chrome on desktop or Android — you can still play by tapping the board.</div>';
+  micBtn.style.opacity = '0.4';
+  micBtn.style.cursor = 'not-allowed';
+} else {
+  recognition = new SpeechRecognitionAPI();
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event) => {
+    const last = event.results[event.results.length - 1];
+    if(last.isFinal){
+      const transcript = last[0].transcript;
+      parseAndPlay(transcript);
+    }
+  };
+
+  recognition.onerror = (event) => {
+    if(event.error === 'no-speech') return;
+    micState.textContent = 'Error: ' + event.error;
+  };
+
+  recognition.onend = () => {
+    if(!userStopped){
+      try{ recognition.start(); } catch(e){}
+    } else {
+      listening = false;
+      micBtn.classList.remove('listening');
+      micState.textContent = 'Tap to speak';
+    }
+  };
+}
+
+micBtn.addEventListener('click', () => {
+  if(!SpeechRecognitionAPI) return;
+  if(listening){
+    userStopped = true;
+    recognition.stop();
+  } else {
+    userStopped = false;
+    listening = true;
+    micBtn.classList.add('listening');
+    micState.textContent = 'Listening…';
+    try{ recognition.start(); } catch(e){}
+  }
+});
+
+// ---------------- Controls ----------------
+function newGame(){
+  game.reset();
+  selectedSquare = null;
+  lastMove = null;
+  renderBoard();
+}
+
+document.getElementById('newGameBtn').addEventListener('click', () => {
+  newGame();
+});
+document.getElementById('undoBtn').addEventListener('click', () => {
+  game.undo();
+  lastMove = null;
+  selectedSquare = null;
+  renderBoard();
+});
+document.getElementById('flipBtn').addEventListener('click', () => {
+  flipped = !flipped;
+  renderBoard();
+});
+
+renderBoard();
+</script>
+</body>
+</html>
